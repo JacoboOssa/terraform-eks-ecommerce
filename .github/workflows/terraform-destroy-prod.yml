@@ -1,0 +1,48 @@
+name: Terraform Destroy - Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy-production" to confirm destruction of production infrastructure.'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: '1.5.0'
+  AWS_REGION: 'us-east-1'
+  ENVIRONMENT: 'prod'
+
+jobs:
+  destroy:
+    name: Destroy Production Infrastructure
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.confirm == 'destroy-production'
+    defaults:
+      run:
+        working-directory: ./infrastructure
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-TerraformDestroyProd
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Destroy
+        run: terraform destroy -input=false -auto-approve -var-file="tfvars/${{ env.ENVIRONMENT }}-${{ env.AWS_REGION }}.tfvars"

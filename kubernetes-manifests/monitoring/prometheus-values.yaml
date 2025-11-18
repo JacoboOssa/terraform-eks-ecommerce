@@ -1,0 +1,372 @@
+# Prometheus Values Configuration
+# This file contains custom values for kube-prometheus-stack Helm chart
+
+# Global settings
+fullnameOverride: "kube-prometheus-stack"
+
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 15d
+    retentionSize: "45GB"
+    
+    # Resource limits
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+    
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: "50Gi"
+          storageClassName: monitoring-gp3
+    
+    # Service monitoring
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    
+    # Additional scrape configs
+    additionalScrapeConfigs:
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+# AlertManager configuration
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: "10Gi"
+          storageClassName: monitoring-gp3
+  
+  config:
+    global:
+      resolve_timeout: 5m
+    
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+      receiver: 'null'
+    
+    receivers:
+      - name: 'null'
+
+# Grafana configuration
+grafana:
+  enabled: true
+  adminPassword: "12345678"
+  
+  replicas: 1
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  
+  persistence:
+    enabled: true
+    type: pvc
+    accessModes:
+      - ReadWriteOnce
+    size: "10Gi"
+    storageClassName: monitoring-gp3
+  
+  # Grafana datasources
+  # IMPORTANTE: Solo agregar datasources adicionales aquí
+  # El datasource de Prometheus ya viene por defecto del chart
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        # Solo agregamos Elasticsearch como datasource adicional
+        # El datasource de Prometheus ya existe por defecto del chart
+        - name: "Elasticsearch"
+          type: "elasticsearch"
+          url: "https://elasticsearch-master.logging:9200"
+          access: "proxy"
+          isDefault: false  # Solo Prometheus debe ser default
+          database: "[logs-]YYYY.MM.DD"
+          jsonData:
+            interval: "Daily"
+            timeField: "@timestamp"
+            esVersion: "8.5.0"
+  
+  # Pre-configured dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: "default"
+          orgId: "1"
+          folder: ""
+          type: "file"
+          disableDeletion: false
+          editable: true
+          options:
+            path: "/var/lib/grafana/dashboards/default"
+
+  dashboards:
+    default:
+      kubernetes-cluster:
+        gnetId: "7249"
+        revision: "1"
+        datasource: "Prometheus"
+      node-exporter:
+        gnetId: "1860"
+        revision: "27"
+        datasource: "Prometheus"
+      pod-resources:
+        gnetId: "6417"
+        revision: "1"
+        datasource: "Prometheus"
+      nginx-ingress:
+        gnetId: "9614"
+        revision: "1"
+        datasource: "Prometheus"
+
+# Prometheus Operator configuration
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# Node Exporter
+nodeExporter:
+  enabled: true
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+
+# Default rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: true
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserverAvailability: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeScheduler: true
+    kubeStateMetrics: true
+    network: true
+    node: true
+    nodeExporterAlerting: true
+    nodeExporterRecording: true
+    prometheus: true
+    prometheusOperator: true
+
+additionalPrometheusRules:
+  - name: custom-alert-rules
+    groups:
+      - name: kubernetes-critical
+        interval: 30s
+        rules:
+          # Node Down Alert
+          - alert: NodeDown
+            expr: up{job="node-exporter"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Node {{ $labels.instance }} is down"
+              description: "Node {{ $labels.instance }} has been down for more than 5 minutes"
+          
+          # High CPU Usage
+          - alert: HighCPUUsage
+            expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU usage on {{ $labels.instance }}"
+              description: "CPU usage is above 80% for more than 10 minutes (current value: {{ $value }}%)"
+          
+          # High Memory Usage
+          - alert: HighMemoryUsage
+            expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory usage on {{ $labels.instance }}"
+              description: "Memory usage is above 85% for more than 10 minutes (current value: {{ $value }}%)"
+          
+          # Pod CrashLoopBackOff
+          - alert: PodCrashLooping
+            expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has restarted {{ $value }} times in the last 15 minutes"
+          
+          # Disk Pressure
+          - alert: DiskPressure
+            expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"} / node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs|squashfs|vfat"}) * 100 < 15
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Disk pressure on {{ $labels.instance }}"
+              description: "Disk usage is above 85% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          
+          # API Server Latency
+          - alert: APIServerLatency
+            expr: histogram_quantile(0.95, sum(rate(apiserver_request_duration_seconds_bucket{verb!="WATCH"}[5m])) by (verb, le)) > 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High API server latency"
+              description: "API server p95 latency is above 1s (current value: {{ $value }}s)"
+          
+          # Certificate Expiration
+          - alert: CertificateExpiringSoon
+            expr: (apiserver_client_certificate_expiration_seconds_bucket - time()) / 86400 < 30
+            for: 1h
+            labels:
+              severity: warning
+            annotations:
+              summary: "Certificate expiring soon"
+              description: "Client certificate expires in less than 30 days"
+          
+          # Pod Not Ready
+          - alert: PodNotReady
+            expr: sum by (namespace, pod) (kube_pod_status_phase{phase!~"Running|Succeeded"}) > 0
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} not ready"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been in a non-ready state for more than 15 minutes"
+          
+          # Deployment Replicas Mismatch
+          - alert: DeploymentReplicasMismatch
+            expr: kube_deployment_spec_replicas != kube_deployment_status_replicas_available
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} replica mismatch"
+              description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has not matched the expected replica count for 15 minutes"
+      
+      - name: elasticsearch-alerts
+        interval: 30s
+        rules:
+          # Elasticsearch Cluster Red
+          - alert: ElasticsearchClusterRed
+            expr: elasticsearch_cluster_health_status{color="red"} == 1
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Elasticsearch cluster status is RED"
+              description: "Elasticsearch cluster {{ $labels.cluster }} is in RED state"
+          
+          # Elasticsearch Cluster Yellow
+          - alert: ElasticsearchClusterYellow
+            expr: elasticsearch_cluster_health_status{color="yellow"} == 1
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Elasticsearch cluster status is YELLOW"
+              description: "Elasticsearch cluster {{ $labels.cluster }} has been in YELLOW state for 30 minutes"
+          
+          # Elasticsearch High JVM Memory
+          - alert: ElasticsearchHighJVMMemory
+            expr: elasticsearch_jvm_memory_used_bytes{area="heap"} / elasticsearch_jvm_memory_max_bytes{area="heap"} > 0.9
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Elasticsearch JVM memory usage high"
+              description: "JVM heap usage on {{ $labels.instance }} is above 90%"
+      
+      - name: pod-resources
+        interval: 30s
+        rules:
+          # Container Memory Usage High
+          - alert: ContainerMemoryUsageHigh
+            expr: (container_memory_working_set_bytes / container_spec_memory_limit_bytes) > 0.9
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Container memory usage high"
+              description: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} memory usage is above 90%"
+          
+          # Container CPU Throttling
+          - alert: ContainerCPUThrottling
+            expr: rate(container_cpu_cfs_throttled_seconds_total[5m]) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Container CPU throttling"
+              description: "Container {{ $labels.namespace }}/{{ $labels.pod }}/{{ $labels.container }} is being CPU throttled"

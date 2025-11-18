@@ -1,0 +1,33 @@
+# Grafana-specific values
+# Note: Most Grafana configuration is in prometheus-values.yaml
+# This file can be used for additional Grafana customizations
+
+# Additional plugins to install
+plugins:
+  - grafana-piechart-panel
+  - grafana-clock-panel
+  - grafana-simple-json-datasource
+
+# Environment variables
+env:
+  GF_EXPLORE_ENABLED: "true"
+  GF_PANELS_DISABLE_SANITIZE_HTML: "true"
+  GF_LOG_FILTERS: "rendering:debug"
+  GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+
+# Ingress configuration (optional)
+ingress:
+  enabled: false
+  ingressClassName: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/healthcheck-path: /api/health
+  hosts:
+    - grafana.example.com
+  tls: []
