@@ -41,17 +41,21 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Get EKS Cluster Name
+        id: get_eks
+        run: echo "eks_cluster_name=$(terraform output -raw eks_cluster_name)" >> $GITHUB_OUTPUT
+
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
-            --name $(terraform output -raw eks_cluster_name) \
+            --name ${{ steps.get_eks.outputs.eks_cluster_name }} \
             --region ${{ env.AWS_REGION }}
 
       - name: Test kubectl access
         run: kubectl get ns
-
-      - name: Terraform Init
-        run: terraform init -input=false
 
       - name: Terraform Destroy
         run: terraform destroy -input=false -auto-approve -var-file="tfvars/${{ env.ENVIRONMENT }}-${{ env.AWS_REGION }}.tfvars"
