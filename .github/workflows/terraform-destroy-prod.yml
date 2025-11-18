@@ -15,6 +15,8 @@ env:
   TF_VERSION: '1.11.2'
   AWS_REGION: 'us-east-1'
   ENVIRONMENT: 'prod'
+  PROJECT_NAME: ecommerce
+
 
 jobs:
   destroy:
@@ -41,14 +43,14 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
-      - name: Get EKS Cluster Name
-        id: get_eks
-        run: echo "eks_cluster_name=$(terraform output -raw eks_cluster_name)" >> $GITHUB_OUTPUT
-
       - name: Configure kubectl
+        continue-on-error: true
         run: |
+          CLUSTER_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
+          echo "Configuring kubectl for cluster: $CLUSTER_NAME"
+          
           aws eks update-kubeconfig \
-            --name ${{ steps.get_eks.outputs.eks_cluster_name }} \
+            --name $CLUSTER_NAME \
             --region ${{ env.AWS_REGION }}
 
       - name: Test kubectl access
