@@ -41,6 +41,15 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --name $(terraform output -raw eks_cluster_name) \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Test kubectl access
+        run: kubectl get ns
+
       - name: Terraform Init
         run: terraform init -input=false
 
