@@ -24,7 +24,7 @@ jobs:
     if: github.event.inputs.confirm == 'destroy-production'
     defaults:
       run:
-        working-directory: ./infrastructure
+        working-directory: .
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
