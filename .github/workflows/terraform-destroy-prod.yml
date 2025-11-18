@@ -55,6 +55,37 @@ jobs:
 
       - name: Test kubectl access
         run: kubectl get ns
+      
+      - name: Cleanup stuck PVCs and Pods
+        continue-on-error: true
+        run: |
+          echo "Cleaning up stuck PVCs and Pods in logging and monitoring namespaces..."
+
+          for ns in logging monitoring; do
+            # Limpieza de PVCs stuck
+            PVCs=$(kubectl get pvc -n $ns --no-headers 2>/dev/null | awk '{print $1}')
+            if [ ! -z "$PVCs" ]; then
+              for pvc in $PVCs; do
+                kubectl patch pvc $pvc -n $ns -p '{"metadata":{"finalizers":null}}' || true
+              done
+            fi
+
+            # Force delete pods stuck
+            PODS=$(kubectl get pods -n $ns --field-selector=status.phase=Terminating -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+            if [ ! -z "$PODS" ]; then
+              for pod in $PODS; do
+                kubectl delete pod $pod -n $ns --force --grace-period=0 || true
+              done
+            fi
+
+            # Force delete namespace if stuck
+            STATUS=$(kubectl get ns $ns -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+            if [ "$STATUS" == "Terminating" ]; then
+              kubectl get namespace $ns -o json | jq '.spec.finalizers=[]' | \
+              kubectl replace --raw /api/v1/namespaces/$ns/finalize -f - || true
+            fi
+          done
+
 
       - name: Terraform Destroy
         run: terraform destroy -input=false -auto-approve -var-file="tfvars/${{ env.ENVIRONMENT }}-${{ env.AWS_REGION }}.tfvars"
