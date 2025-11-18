@@ -26,11 +26,13 @@ resource "helm_release" "kube_prometheus_stack" {
   version    = "54.0.0"
   namespace  = kubernetes_namespace.monitoring.metadata[0].name
   
-  timeout        = 900  # 15 minutos
-  wait           = true
-  atomic         = false
-  cleanup_on_fail = true
-  replace        = true
+  timeout          = 1800
+  wait             = false
+  atomic           = false
+  cleanup_on_fail  = true
+  replace          = true
+  disable_webhooks = true
+
 
   values = [
     file("${path.module}/../../kubernetes-manifests/monitoring/prometheus-values.yaml")
@@ -72,6 +74,14 @@ resource "helm_release" "kube_prometheus_stack" {
     {
       name  = "alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName"
       value = kubernetes_storage_class.monitoring.metadata[0].name
+    },
+    {
+      name  = "prometheusOperator.admissionWebhooks.enabled"
+      value = "false"
+    },
+    {
+      name  = "prometheusOperator.tls.enabled"
+      value = "false"
     }
   ]
 
