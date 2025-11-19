@@ -288,8 +288,6 @@ resource "null_resource" "ensure_helm_cleanup" {
     interpreter = ["/bin/bash", "-c"]
   }
 
-  # Este recurso depende de todos los helm releases
-  # Por lo tanto, se destruye DESPUÉS de que los helm releases se destruyan
   depends_on = [
     helm_release.kube_prometheus_stack,
     helm_release.elasticsearch,

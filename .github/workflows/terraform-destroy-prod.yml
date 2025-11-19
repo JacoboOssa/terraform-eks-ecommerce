@@ -56,30 +56,30 @@ jobs:
       - name: Test kubectl access
         run: kubectl get ns
       
-      # - name: Cleanup PVCs, Pods and Namespaces
-      #   continue-on-error: true
-      #   run: |
-      #     echo "Deleting all pods and namespaces in logging and monitoring..."
+      - name: Cleanup PVCs, Pods and Namespaces
+        continue-on-error: true
+        run: |
+          echo "Deleting all pods and namespaces in logging and monitoring..."
 
-      #     for ns in logging monitoring; do
-      #       echo "Processing namespace: $ns"
+          for ns in logging monitoring; do
+            echo "Processing namespace: $ns"
 
-      #       # Delete all pods in the namespace (ignore errors if none exist)
-      #       PODS=$(kubectl get pods -n $ns --no-headers 2>/dev/null | awk '{print $1}')
-      #       if [ ! -z "$PODS" ]; then
-      #         echo "Deleting pods in $ns..."
-      #         for pod in $PODS; do
-      #           kubectl delete pod $pod -n $ns --force --grace-period=0 || true
-      #         done
-      #       fi
+            # Delete all pods in the namespace (ignore errors if none exist)
+            PODS=$(kubectl get pods -n $ns --no-headers 2>/dev/null | awk '{print $1}')
+            if [ ! -z "$PODS" ]; then
+              echo "Deleting pods in $ns..."
+              for pod in $PODS; do
+                kubectl delete pod $pod -n $ns --force --grace-period=0 || true
+              done
+            fi
 
-      #       # Delete the namespace itself
-      #       NS_EXIST=$(kubectl get ns $ns --no-headers 2>/dev/null || echo "")
-      #       if [ ! -z "$NS_EXIST" ]; then
-      #         echo "Deleting namespace $ns..."
-      #         kubectl delete ns $ns --force --grace-period=0 || true
-      #       fi
-      #     done
+            # Delete the namespace itself
+            NS_EXIST=$(kubectl get ns $ns --no-headers 2>/dev/null || echo "")
+            if [ ! -z "$NS_EXIST" ]; then
+              echo "Deleting namespace $ns..."
+              kubectl delete ns $ns --force --grace-period=0 || true
+            fi
+          done
 
 
 
