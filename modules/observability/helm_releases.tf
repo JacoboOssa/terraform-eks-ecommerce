@@ -232,59 +232,173 @@ resource "null_resource" "ensure_helm_cleanup" {
   triggers = {
     cluster_name = var.cluster_name
     region       = var.region
+    vpc_id       = var.vpc_id != null ? var.vpc_id : ""
   }
 
   provisioner "local-exec" {
     when    = destroy
-    command = <<-EOF
-      #!/bin/bash
-      set -e
-      
-      echo "=== Starting Helm cleanup verification ==="
-      
-      # Configurar kubectl
-      aws eks update-kubeconfig \
-        --name ${self.triggers.cluster_name} \
-        --region ${self.triggers.region} 2>/dev/null || true
-      
-      # Esperar a que Helm termine de eliminar recursos
-      echo "Waiting for Helm releases to be fully removed..."
-      sleep 120
-      
-      # Verificar y eliminar PVCs manualmente si aún existen
-      for ns in monitoring logging; do
-        if kubectl get namespace $ns &>/dev/null; then
-          echo "Checking PVCs in namespace: $ns"
-          
-          PVCS=$(kubectl get pvc -n $ns --no-headers 2>/dev/null | awk '{print $1}' || echo "")
-          if [ ! -z "$PVCS" ]; then
-            echo "Deleting remaining PVCs in $ns..."
-            kubectl delete pvc --all -n $ns --timeout=300s --wait=true || true
-          fi
-        fi
+    command = <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLUSTER="${self.triggers.cluster_name}"
+REGION="${self.triggers.region}"
+VPC_ID="${self.triggers.vpc_id}"
+
+echo "=== Helm cleanup verification (robust) starting ==="
+
+# configure kubeconfig
+aws eks update-kubeconfig --name "${CLUSTER}" --region "${REGION}" 2>/dev/null || true
+
+# helper waits
+wait_for_no_pvcs_in_ns() {
+  ns="$1"
+  timeout=${2:-600}   # seconds
+  echo "Waiting up to ${timeout}s for PVCs in namespace '$ns' to disappear..."
+  start=$(date +%s)
+  while true; do
+    if ! kubectl get ns "$ns" >/dev/null 2>&1; then
+      echo "Namespace $ns not present; OK"
+      return 0
+    fi
+    pvcs=$(kubectl get pvc -n "$ns" --no-headers 2>/dev/null | wc -l || echo 0)
+    if [ "$pvcs" -eq 0 ]; then
+      echo "No PVCs in $ns"
+      return 0
+    fi
+    now=$(date +%s)
+    if [ $((now - start)) -gt "$timeout" ]; then
+      echo "Timeout waiting for PVCs in $ns"
+      return 1
+    fi
+    sleep 5
+  done
+}
+
+wait_for_no_lb_services() {
+  timeout=${1:-600}
+  echo "Waiting up to ${timeout}s for LoadBalancer services to disappear..."
+  start=$(date +%s)
+  while true; do
+    lbs=$(kubectl get svc --all-namespaces -o json 2>/dev/null | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
+    if [ -z "$lbs" ]; then
+      echo "No LoadBalancer services found"
+      return 0
+    fi
+    now=$(date +%s)
+    if [ $((now - start)) -gt "$timeout" ]; then
+      echo "Timeout waiting for LoadBalancer services to disappear (still:)"
+      echo "$lbs"
+      return 1
+    fi
+    echo "LoadBalancer services still present (count: $(echo "$lbs" | wc -l)). Waiting..."
+    sleep 5
+  done
+}
+
+remove_namespace_finalizers() {
+  ns="$1"
+  if kubectl get ns "$ns" >/dev/null 2>&1; then
+    echo "Removing finalizers from namespace $ns if any..."
+    kubectl get ns "$ns" -o json \
+      | jq '.spec.finalizers = []' \
+      | kubectl replace --raw "/api/v1/namespaces/${ns}/finalize" -f - || true
+  fi
+}
+
+delete_prometheus_crds() {
+  echo "Deleting known Prometheus CRDs (ignore not-found)..."
+  kubectl delete crd --ignore-not-found \
+    alertmanagerconfigs.monitoring.coreos.com \
+    alertmanagers.monitoring.coreos.com \
+    podmonitors.monitoring.coreos.com \
+    probes.monitoring.coreos.com \
+    prometheuses.monitoring.coreos.com \
+    prometheusrules.monitoring.coreos.com \
+    servicemonitors.monitoring.coreos.com \
+    thanosrulers.monitoring.coreos.com || true
+}
+
+delete_elasticsearch_crds() {
+  echo "Deleting known Elasticsearch CRDs (ignore not-found)..."
+  kubectl delete crd --ignore-not-found \
+    elasticsearches.logging.k8s.elastic.co \
+    kibanas.logging.k8s.elastic.co \
+    beats.logging.k8s.elastic.co || true
+}
+
+wait_for_no_enis_in_vpc() {
+  if [ -z "$VPC_ID" ]; then
+    echo "No VPC_ID provided; skipping ENI check."
+    return 0
+  fi
+  echo "Waiting for ENIs in VPC ${VPC_ID} to be 0 (timeout 900s)..."
+  start=$(date +%s)
+  timeout=900
+  while true; do
+    count=$(aws ec2 describe-network-interfaces --filters Name=vpc-id,Values="${VPC_ID}" --query 'length(NetworkInterfaces)' --output text 2>/dev/null || echo "0")
+    echo "ENIs left in VPC ${VPC_ID}: ${count}"
+    if [ "${count}" -eq "0" ]; then
+      echo "No ENIs left in VPC ${VPC_ID}"
+      return 0
+    fi
+    now=$(date +%s)
+    if [ $((now - start)) -gt "$timeout" ]; then
+      echo "Timeout waiting for ENIs to drain (left: ${count})"
+      return 1
+    fi
+    sleep 10
+  done
+}
+
+# --- main cleanup flow ---
+
+# 1) wait for Helm releases to be removed by the provider (we rely on helm_release wait=true above)
+echo "Allowing Kubernetes time to finalize release deletions..."
+# small initial pause to let Helm start deletions
+sleep 10
+
+# 2) for each namespace try to wait for PVCs to go away; if blocked, remove finalizers & CRDs and try again
+for ns in monitoring logging; do
+  echo "Processing namespace: $ns"
+
+  # attempt graceful wait for PVCs
+  if ! wait_for_no_pvcs_in_ns "$ns" 600; then
+    echo "PVCs did not disappear in namespace $ns; trying to remove finalizers and CRDs..."
+    remove_namespace_finalizers "$ns"
+    delete_prometheus_crds
+    delete_elasticsearch_crds
+
+    # give some time
+    sleep 10
+    # attempt wait again (shorter)
+    wait_for_no_pvcs_in_ns "$ns" 300 || true
+  fi
+done
+
+# 3) wait for all LoadBalancer services to be gone; if still present, attempt to delete them
+if ! wait_for_no_lb_services 600; then
+  echo "Forcing deletion of remaining LoadBalancer services..."
+  kubectl get svc --all-namespaces -o json \
+    | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"' \
+    | while read line; do
+        ns=$(echo "$line" | cut -d'/' -f1)
+        name=$(echo "$line" | cut -d'/' -f2)
+        echo "Deleting svc $ns/$name"
+        kubectl delete svc "$name" -n "$ns" --wait --timeout=300s || true
       done
-      
-      # Verificar LoadBalancers
-      echo "Checking for LoadBalancer services..."
-      LB_SERVICES=$(kubectl get svc --all-namespaces -o json 2>/dev/null | \
-        jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
-      
-      if [ ! -z "$LB_SERVICES" ]; then
-        echo "Deleting LoadBalancer services..."
-        echo "$LB_SERVICES" | while read svc; do
-          NS=$(echo $svc | cut -d/ -f1)
-          NAME=$(echo $svc | cut -d/ -f2)
-          kubectl delete svc $NAME -n $NS --timeout=300s --wait=true || true
-        done
-      fi
-      
-      # Esperar adicional para que AWS libere ENIs
-      echo "Waiting for AWS to release ENIs..."
-      sleep 120
-      
-      echo "=== Helm cleanup verification completed ==="
-    EOF
-    
+fi
+
+# 4) wait for ENIs in VPC to drain (if vpc_id provided)
+wait_for_no_enis_in_vpc || {
+  echo "ENIs still present after wait — printing current ENIs for diagnosis:"
+  aws ec2 describe-network-interfaces --filters Name=vpc-id,Values="${VPC_ID}" --query 'NetworkInterfaces[*].{ID:NetworkInterfaceId,Desc:Description,Status:Status,Attach:Attachment.AttachmentId,InstanceId:Attachment.InstanceId}' --output table || true
+  # don't fail the destroy hard — just warn and continue
+  echo "Warning: ENIs remain in VPC ${VPC_ID}. Terraform may still fail deleting subnets."
+}
+
+echo "=== Helm cleanup verification completed ==="
+EOF
     interpreter = ["/bin/bash", "-c"]
   }
 

@@ -6,6 +6,11 @@ resource "aws_subnet" "public" {
   availability_zone       = var.availability_zones[count.index]
   map_public_ip_on_launch = true
 
+  depends_on = [
+    module.eks,            # tu módulo de EKS
+    module.observability   # módulos helm (CNI, LB, EBS CSI)
+  ]
+
   tags = merge(
     var.tags,
     {
@@ -22,6 +27,11 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = var.private_subnet_cidrs[count.index]
   availability_zone = var.availability_zones[count.index]
+
+  depends_on = [
+    module.eks,
+    module.observability
+  ]
 
   tags = merge(
     var.tags,
