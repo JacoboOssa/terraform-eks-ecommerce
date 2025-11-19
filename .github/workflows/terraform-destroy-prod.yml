@@ -43,14 +43,13 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
-      ############## EKS KUBECTL CONFIG ##############
-
+      ############################################################
+      # FIX 1 → Conectar a EKS antes de destruir
+      ############################################################
       - name: Configure kubectl
         continue-on-error: true
         run: |
           CLUSTER_NAME="${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
-          echo "Configuring kubectl for cluster: $CLUSTER_NAME"
-          
           aws eks update-kubeconfig \
             --name $CLUSTER_NAME \
             --region ${{ env.AWS_REGION }}
@@ -59,93 +58,77 @@ jobs:
         continue-on-error: true
         run: kubectl get ns
 
-      ############## CLEANUP PODS + PVCs + NAMESPACES ##############
-
+      ############################################################
+      # FIX 2 → Borrar PODs, PVCs y eliminar namespaces problemáticos
+      ############################################################
       - name: Cleanup PVCs, Pods and Namespaces
         continue-on-error: true
         run: |
           echo "Deleting all pods and namespaces in logging and monitoring..."
 
           for ns in logging monitoring; do
-            echo "Processing namespace: $ns"
+            echo "Processing namespace $ns"
 
-            # Delete all pods
             PODS=$(kubectl get pods -n $ns --no-headers 2>/dev/null | awk '{print $1}')
             if [ ! -z "$PODS" ]; then
-              echo "Deleting pods in $ns..."
               for pod in $PODS; do
                 kubectl delete pod $pod -n $ns --force --grace-period=0 || true
               done
             fi
 
-            # Delete the namespace
-            NS_EXIST=$(kubectl get ns $ns --no-headers 2>/dev/null || echo "")
-            if [ ! -z "$NS_EXIST" ]; then
-              echo "Deleting namespace $ns..."
-              kubectl delete ns $ns --force --grace-period=0 || true
-            fi
+            kubectl delete ns $ns --force --grace-period=0 || true
           done
 
-      ############## WAIT FOR CLEANUP ##############
-
-      - name: Esperar limpieza de recursos K8s
+      ############################################################
+      # FIX 3 → Esperar a que desaparezcan PODs, PVCs y namespaces
+      ############################################################
+      - name: Wait for cleanup
         continue-on-error: true
         run: |
-          echo "Esperando a que no queden pods ni PVCs..."
-
           for ns in logging monitoring; do
             for tipo in pods pvc; do
               for i in {1..30}; do
-                RESTANTES=$(kubectl get $tipo -n $ns --no-headers 2>/dev/null | wc -l)
-                if [ "$RESTANTES" -eq 0 ]; then
-                  echo "No quedan $tipo en $ns."
-                  break
-                fi
-                echo "Aún quedan $RESTANTES $tipo en $ns. Esperando... ($i/30)"
+                CNT=$(kubectl get $tipo -n $ns --no-headers 2>/dev/null | wc -l)
+                if [ "$CNT" -eq 0 ]; then break; fi
                 sleep 10
               done
             done
           done
 
-          echo "Esperando a que namespaces logging/monitoring desaparezcan..."
+          # Esperar namespaces
           for i in {1..30}; do
-            NS_LEFT=$(kubectl get ns logging monitoring --no-headers 2>/dev/null | wc -l)
-            if [ "$NS_LEFT" -eq 0 ]; then
-              echo "Namespaces eliminados."
-              break
-            fi
-            echo "Namespaces restantes: $NS_LEFT. Esperando... ($i/30)"
+            NSCNT=$(kubectl get ns logging monitoring --no-headers 2>/dev/null | wc -l)
+            if [ "$NSCNT" -eq 0 ]; then break; fi
             sleep 10
           done
 
-      ############## FORCE DELETE ENIs ##############
-
+      ############################################################
+      # FIX 4 → ELIMINAR TODAS LAS ENIs CREADAS POR EKS
+      # Esto es lo que estaba faltando y lo que bloquea tu destroy
+      ############################################################
       - name: Force delete leftover ENIs
         continue-on-error: true
         run: |
-          echo "Buscando ENIs sobrantes del cluster..."
-
           CLUSTER_TAG="kubernetes.io/cluster/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
 
           ENI_IDS=$(aws ec2 describe-network-interfaces \
-            --region ${{ env.AWS_REGION }} \
             --filters Name=tag-key,Values=$CLUSTER_TAG \
             --query 'NetworkInterfaces[*].NetworkInterfaceId' \
             --output text)
 
           if [ -z "$ENI_IDS" ]; then
-            echo "No hay ENIs sobrantes."
+            echo "No leftover ENIs."
           else
-            echo "ENIs encontradas: $ENI_IDS"
+            echo "Deleting ENIs: $ENI_IDS"
             for eni in $ENI_IDS; do
-              echo "Eliminando ENI $eni ..."
               aws ec2 delete-network-interface \
                 --network-interface-id $eni \
                 --region ${{ env.AWS_REGION }} || true
             done
           fi
 
-      ############## TERRAFORM DESTROY ##############
-
+      ############################################################
+      # FIX 5 → Ejecutar el destroy LIMPIO
+      ############################################################
       - name: Terraform Destroy
         run: terraform destroy -input=false -auto-approve -var-file="tfvars/${{ env.ENVIRONMENT }}-${{ env.AWS_REGION }}.tfvars"
