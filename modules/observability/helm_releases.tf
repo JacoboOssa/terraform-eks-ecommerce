@@ -227,3 +227,76 @@ resource "helm_release" "aws_ebs_csi_driver" {
     }
   ]
 }
+
+resource "null_resource" "ensure_helm_cleanup" {
+  triggers = {
+    cluster_name = var.cluster_name
+    region       = var.region
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOF
+      #!/bin/bash
+      set -e
+      
+      echo "=== Starting Helm cleanup verification ==="
+      
+      # Configurar kubectl
+      aws eks update-kubeconfig \
+        --name ${self.triggers.cluster_name} \
+        --region ${self.triggers.region} 2>/dev/null || true
+      
+      # Esperar a que Helm termine de eliminar recursos
+      echo "Waiting for Helm releases to be fully removed..."
+      sleep 120
+      
+      # Verificar y eliminar PVCs manualmente si aún existen
+      for ns in monitoring logging; do
+        if kubectl get namespace $ns &>/dev/null; then
+          echo "Checking PVCs in namespace: $ns"
+          
+          PVCS=$(kubectl get pvc -n $ns --no-headers 2>/dev/null | awk '{print $1}' || echo "")
+          if [ ! -z "$PVCS" ]; then
+            echo "Deleting remaining PVCs in $ns..."
+            kubectl delete pvc --all -n $ns --timeout=300s --wait=true || true
+          fi
+        fi
+      done
+      
+      # Verificar LoadBalancers
+      echo "Checking for LoadBalancer services..."
+      LB_SERVICES=$(kubectl get svc --all-namespaces -o json 2>/dev/null | \
+        jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"' || echo "")
+      
+      if [ ! -z "$LB_SERVICES" ]; then
+        echo "Deleting LoadBalancer services..."
+        echo "$LB_SERVICES" | while read svc; do
+          NS=$(echo $svc | cut -d/ -f1)
+          NAME=$(echo $svc | cut -d/ -f2)
+          kubectl delete svc $NAME -n $NS --timeout=300s --wait=true || true
+        done
+      fi
+      
+      # Esperar adicional para que AWS libere ENIs
+      echo "Waiting for AWS to release ENIs..."
+      sleep 120
+      
+      echo "=== Helm cleanup verification completed ==="
+    EOF
+    
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  # Este recurso depende de todos los helm releases
+  # Por lo tanto, se destruye DESPUÉS de que los helm releases se destruyan
+  depends_on = [
+    helm_release.kube_prometheus_stack,
+    helm_release.elasticsearch,
+    helm_release.kibana,
+    helm_release.logstash,
+    helm_release.filebeat,
+    helm_release.aws_load_balancer_controller,
+    helm_release.aws_ebs_csi_driver
+  ]
+}
