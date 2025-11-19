@@ -90,6 +90,11 @@ resource "aws_eks_addon" "vpc_cni" {
   service_account_role_arn = null
 
   tags = var.tags
+  
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_eks_node_group.main
+  ]
 }
 
 resource "aws_eks_addon" "coredns" {
@@ -101,7 +106,11 @@ resource "aws_eks_addon" "coredns" {
 
   tags = var.tags
 
-  depends_on = [aws_eks_node_group.main]
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_eks_node_group.main
+  ]
+
 }
 
 resource "aws_eks_addon" "kube_proxy" {
@@ -112,5 +121,11 @@ resource "aws_eks_addon" "kube_proxy" {
   resolve_conflicts_on_update = "OVERWRITE"
 
   tags = var.tags
+
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_eks_node_group.main
+  ]
+
 }
 
