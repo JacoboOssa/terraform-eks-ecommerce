@@ -81,6 +81,47 @@ jobs:
             fi
           done
 
+      - name: Esperar limpieza de recursos K8s y ENIs
+        run: |
+          echo "Esperando a que todos los pods, PVCs y namespaces sean eliminados..."
+          # Esperar a que no queden pods ni PVCs en logging y monitoring
+          for ns in logging monitoring; do
+            for tipo in pods pvc; do
+              for i in {1..30}; do
+                RESTANTES=$(kubectl get $tipo -n $ns --no-headers 2>/dev/null | wc -l)
+                if [ "$RESTANTES" -eq 0 ]; then
+                  echo "No quedan $tipo en $ns."
+                  break
+                fi
+                echo "Aún quedan $RESTANTES $tipo en $ns. Esperando... ($i/30)"
+                sleep 10
+              done
+            done
+          done
+
+          echo "Esperando a que no queden namespaces logging ni monitoring..."
+          for i in {1..30}; do
+            NS_LEFT=$(kubectl get ns logging monitoring --no-headers 2>/dev/null | wc -l)
+            if [ "$NS_LEFT" -eq 0 ]; then
+              echo "Namespaces eliminados."
+              break
+            fi
+            echo "Aún quedan $NS_LEFT namespaces. Esperando... ($i/30)"
+            sleep 10
+          done
+
+          echo "Esperando a que no queden ENIs asociadas al cluster..."
+          CLUSTER_TAG="kubernetes.io/cluster/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
+          for i in {1..30}; do
+            ENI_IDS=$(aws ec2 describe-network-interfaces --region ${{ env.AWS_REGION }} --filters Name=tag-key,Values=$CLUSTER_TAG --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text)
+            if [ -z "$ENI_IDS" ]; then
+              echo "No quedan ENIs asociadas al cluster."
+              break
+            fi
+            echo "Aún quedan ENIs: $ENI_IDS. Esperando... ($i/30)"
+            sleep 20
+          done
+
 
 
       - name: Terraform Destroy

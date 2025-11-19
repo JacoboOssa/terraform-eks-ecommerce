@@ -48,8 +48,6 @@ module "observability" {
   elasticsearch_node_count            = var.elasticsearch_node_count
   elasticsearch_storage_size          = var.elasticsearch_storage_size
   elasticsearch_retention_days        = var.elasticsearch_retention_days
-  vpc_id = module.network.vpc_id
-
   
   tags = local.common_tags
   
