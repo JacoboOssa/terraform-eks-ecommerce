@@ -17,13 +17,13 @@ env:
   ENVIRONMENT: 'prod'
   PROJECT_NAME: ecommerce
 
-
 jobs:
   destroy:
     name: Destroy Production Infrastructure
     runs-on: ubuntu-latest
     environment: production
     if: github.event.inputs.confirm == 'destroy-production'
+
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -43,6 +43,8 @@ jobs:
       - name: Terraform Init
         run: terraform init -input=false
 
+      ############## EKS KUBECTL CONFIG ##############
+
       - name: Configure kubectl
         continue-on-error: true
         run: |
@@ -54,8 +56,11 @@ jobs:
             --region ${{ env.AWS_REGION }}
 
       - name: Test kubectl access
+        continue-on-error: true
         run: kubectl get ns
-      
+
+      ############## CLEANUP PODS + PVCs + NAMESPACES ##############
+
       - name: Cleanup PVCs, Pods and Namespaces
         continue-on-error: true
         run: |
@@ -64,7 +69,7 @@ jobs:
           for ns in logging monitoring; do
             echo "Processing namespace: $ns"
 
-            # Delete all pods in the namespace (ignore errors if none exist)
+            # Delete all pods
             PODS=$(kubectl get pods -n $ns --no-headers 2>/dev/null | awk '{print $1}')
             if [ ! -z "$PODS" ]; then
               echo "Deleting pods in $ns..."
@@ -73,7 +78,7 @@ jobs:
               done
             fi
 
-            # Delete the namespace itself
+            # Delete the namespace
             NS_EXIST=$(kubectl get ns $ns --no-headers 2>/dev/null || echo "")
             if [ ! -z "$NS_EXIST" ]; then
               echo "Deleting namespace $ns..."
@@ -81,10 +86,13 @@ jobs:
             fi
           done
 
-      - name: Esperar limpieza de recursos K8s y ENIs
+      ############## WAIT FOR CLEANUP ##############
+
+      - name: Esperar limpieza de recursos K8s
+        continue-on-error: true
         run: |
-          echo "Esperando a que todos los pods, PVCs y namespaces sean eliminados..."
-          # Esperar a que no queden pods ni PVCs en logging y monitoring
+          echo "Esperando a que no queden pods ni PVCs..."
+
           for ns in logging monitoring; do
             for tipo in pods pvc; do
               for i in {1..30}; do
@@ -99,30 +107,45 @@ jobs:
             done
           done
 
-          echo "Esperando a que no queden namespaces logging ni monitoring..."
+          echo "Esperando a que namespaces logging/monitoring desaparezcan..."
           for i in {1..30}; do
             NS_LEFT=$(kubectl get ns logging monitoring --no-headers 2>/dev/null | wc -l)
             if [ "$NS_LEFT" -eq 0 ]; then
               echo "Namespaces eliminados."
               break
             fi
-            echo "Aún quedan $NS_LEFT namespaces. Esperando... ($i/30)"
+            echo "Namespaces restantes: $NS_LEFT. Esperando... ($i/30)"
             sleep 10
           done
 
-          echo "Esperando a que no queden ENIs asociadas al cluster..."
+      ############## FORCE DELETE ENIs ##############
+
+      - name: Force delete leftover ENIs
+        continue-on-error: true
+        run: |
+          echo "Buscando ENIs sobrantes del cluster..."
+
           CLUSTER_TAG="kubernetes.io/cluster/${{ env.PROJECT_NAME }}-${{ env.ENVIRONMENT }}"
-          for i in {1..30}; do
-            ENI_IDS=$(aws ec2 describe-network-interfaces --region ${{ env.AWS_REGION }} --filters Name=tag-key,Values=$CLUSTER_TAG --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text)
-            if [ -z "$ENI_IDS" ]; then
-              echo "No quedan ENIs asociadas al cluster."
-              break
-            fi
-            echo "Aún quedan ENIs: $ENI_IDS. Esperando... ($i/30)"
-            sleep 20
-          done
 
+          ENI_IDS=$(aws ec2 describe-network-interfaces \
+            --region ${{ env.AWS_REGION }} \
+            --filters Name=tag-key,Values=$CLUSTER_TAG \
+            --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+            --output text)
 
+          if [ -z "$ENI_IDS" ]; then
+            echo "No hay ENIs sobrantes."
+          else
+            echo "ENIs encontradas: $ENI_IDS"
+            for eni in $ENI_IDS; do
+              echo "Eliminando ENI $eni ..."
+              aws ec2 delete-network-interface \
+                --network-interface-id $eni \
+                --region ${{ env.AWS_REGION }} || true
+            done
+          fi
+
+      ############## TERRAFORM DESTROY ##############
 
       - name: Terraform Destroy
         run: terraform destroy -input=false -auto-approve -var-file="tfvars/${{ env.ENVIRONMENT }}-${{ env.AWS_REGION }}.tfvars"
