@@ -178,7 +178,7 @@ resource "kubernetes_service_account" "aws_load_balancer_controller" {
     namespace = "kube-system"
     
     annotations = {
-      "eks.amazonaws.com/role-arn" = aws_iam_role.alb_controller.arn
+      "eks.amazonaws.com/role-arn" = var.alb_controller_role_arn
     }
 
     labels = {
@@ -186,13 +186,8 @@ resource "kubernetes_service_account" "aws_load_balancer_controller" {
       "app.kubernetes.io/component" = "controller"
     }
   }
-
-  depends_on = [
-    aws_eks_cluster.main,
-    aws_iam_openid_connect_provider.cluster,
-    aws_iam_role_policy_attachment.alb_controller_policy_attachment
-  ]
 }
+
 
 
 resource "helm_release" "aws_load_balancer_controller" {
@@ -202,10 +197,9 @@ resource "helm_release" "aws_load_balancer_controller" {
   version    = "1.6.2"
   namespace  = "kube-system"
 
-  # Configuración básica
   set {
     name  = "clusterName"
-    value = aws_eks_cluster.main.name
+    value = var.cluster_name
   }
 
   set {
@@ -218,7 +212,6 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = var.vpc_id
   }
 
-  # Service Account (ya creado por separado)
   set {
     name  = "serviceAccount.create"
     value = "false"
@@ -229,13 +222,11 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = kubernetes_service_account.aws_load_balancer_controller.metadata[0].name
   }
 
-  # Réplicas según ambiente
   set {
     name  = "replicaCount"
     value = var.environment == "prod" ? "2" : "1"
   }
 
-  # Recursos
   set {
     name  = "resources.requests.cpu"
     value = "100m"
@@ -256,13 +247,11 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = "500Mi"
   }
 
-  # Log level según ambiente
   set {
     name  = "logLevel"
     value = var.environment == "prod" ? "info" : "debug"
   }
 
-  # Webhooks - CRÍTICO para evitar el problema que tuviste
   set {
     name  = "enableServiceMutatorWebhook"
     value = "true"
@@ -284,12 +273,10 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
 
   depends_on = [
-    aws_eks_cluster.main,
-    aws_eks_node_group.main,
-    kubernetes_service_account.aws_load_balancer_controller,
-    aws_iam_role_policy_attachment.alb_controller_policy_attachment
+    kubernetes_service_account.aws_load_balancer_controller
   ]
 }
+
 
 
 
