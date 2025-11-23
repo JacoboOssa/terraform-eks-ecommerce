@@ -180,15 +180,15 @@ resource "helm_release" "aws_load_balancer_controller" {
   chart      = "aws-load-balancer-controller"
   version    = "1.6.2"
   namespace  = "kube-system"
-
-  set = [
+  
+  set_string = [
     {
       name  = "clusterName"
       value = var.cluster_name
     },
     {
       name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-      value = var.alb_controller_role_arn
+      value = aws_iam_role.alb_controller.arn
     },
     {
       name  = "serviceAccount.create"
@@ -199,6 +199,7 @@ resource "helm_release" "aws_load_balancer_controller" {
       value = "aws-load-balancer-controller"
     }
   ]
+
 }
 
 
