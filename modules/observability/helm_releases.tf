@@ -180,27 +180,10 @@ resource "helm_release" "aws_load_balancer_controller" {
   chart      = "aws-load-balancer-controller"
   version    = "1.6.2"
   namespace  = "kube-system"
-  
-  set_string = [
-    {
-      name  = "clusterName"
-      value = var.cluster_name
-    },
-    {
-      name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
-      value = aws_iam_role.alb_controller.arn
-    },
-    {
-      name  = "serviceAccount.create"
-      value = "true"
-    },
-    {
-      name  = "serviceAccount.name"
-      value = "aws-load-balancer-controller"
-    }
-  ]
 
+  values = [file("${path.module}/alb-controller-values.yaml")]
 }
+
 
 
 # AWS EBS CSI Driver

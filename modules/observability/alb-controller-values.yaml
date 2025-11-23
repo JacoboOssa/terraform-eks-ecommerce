@@ -1,0 +1,8 @@
+clusterName: ${var.cluster_name}
+region: ${var.region}
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::058264169618:role/ecommerce-prod-alb-controller-role
+vpcId: ""
