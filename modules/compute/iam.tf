@@ -102,7 +102,9 @@ resource "aws_iam_openid_connect_provider" "cluster" {
   )
 }
 
-# AWS Load Balancer Controller IAM Role (IRSA)
+
+
+# IAM Role para AWS Load Balancer Controller
 resource "aws_iam_role" "alb_controller" {
   name = "${var.project_name}-${var.environment}-alb-controller-role"
 
@@ -111,27 +113,32 @@ resource "aws_iam_role" "alb_controller" {
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Federated = aws_iam_openid_connect_provider.cluster.arn
+        Federated = module.compute.oidc_provider_arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+          "${module.compute.oidc_provider_arn}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
         }
       }
     }]
   })
 
-  tags = merge(
-    var.tags,
-    {
-      Name = "${var.project_name}-${var.environment}-alb-controller-role"
-    }
-  )
+  tags = var.tags
 }
 
-resource "aws_iam_role_policy_attachment" "alb_controller_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AWSLoadBalancerControllerIAMPolicy"
-  role       = aws_iam_role.alb_controller.name
+# Crear IAM Policy desde JSON oficial
+resource "aws_iam_policy" "alb_controller_policy" {
+  name        = "AWSLoadBalancerControllerIAMPolicy"
+  description = "IAM policy for AWS Load Balancer Controller"
+  policy      = file("${path.module}/alb-controller-policy.json")
 }
+
+# Adjuntar policy al role
+resource "aws_iam_role_policy_attachment" "alb_controller_policy_attachment" {
+  role       = aws_iam_role.alb_controller.name
+  policy_arn = aws_iam_policy.alb_controller_policy.arn
+}
+
+
 
