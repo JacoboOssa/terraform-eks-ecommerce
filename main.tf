@@ -48,6 +48,8 @@ module "observability" {
   elasticsearch_node_count            = var.elasticsearch_node_count
   elasticsearch_storage_size          = var.elasticsearch_storage_size
   elasticsearch_retention_days        = var.elasticsearch_retention_days
+  alb_controller_role_arn = module.compute.alb_controller_role_arn
+
   
   tags = local.common_tags
   
