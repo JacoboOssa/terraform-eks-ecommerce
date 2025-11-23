@@ -63,3 +63,8 @@ output "oidc_provider_url" {
   value       = aws_iam_openid_connect_provider.cluster.url
 }
 
+output "alb_controller_role_arn" {
+  description = "IAM role ARN for AWS Load Balancer Controller"
+  value       = aws_iam_role.alb_controller.arn
+}
+

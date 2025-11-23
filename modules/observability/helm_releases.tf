@@ -180,18 +180,15 @@ resource "helm_release" "aws_load_balancer_controller" {
   chart      = "aws-load-balancer-controller"
   version    = "1.6.2"
   namespace  = "kube-system"
+
   set = [
     {
       name  = "clusterName"
       value = var.cluster_name
     },
     {
-      name  = "region"
-      value = var.region
-    },
-    {
-      name  = "vpcId"
-      value = ""  # Auto-detected by the controller
+      name  = "serviceAccount.annotations.eks.amazonaws.com/role-arn"
+      value = module.compute.alb_controller_role_arn
     },
     {
       name  = "serviceAccount.create"
@@ -200,13 +197,10 @@ resource "helm_release" "aws_load_balancer_controller" {
     {
       name  = "serviceAccount.name"
       value = "aws-load-balancer-controller"
-    },
-    {
-      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-      value = var.oidc_provider_arn  # Note: This should reference the actual IAM role ARN from compute module
     }
   ]
 }
+
 
 # AWS EBS CSI Driver
 resource "helm_release" "aws_ebs_csi_driver" {
