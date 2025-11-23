@@ -172,8 +172,29 @@ resource "helm_release" "filebeat" {
   ]
 }
 
+resource "kubernetes_service_account" "aws_load_balancer_controller" {
+  metadata {
+    name      = "aws-load-balancer-controller"
+    namespace = "kube-system"
+    
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.alb_controller.arn
+    }
 
-# AWS Load Balancer Controller
+    labels = {
+      "app.kubernetes.io/name"      = "aws-load-balancer-controller"
+      "app.kubernetes.io/component" = "controller"
+    }
+  }
+
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_iam_openid_connect_provider.cluster,
+    aws_iam_role_policy_attachment.alb_controller_policy_attachment
+  ]
+}
+
+
 resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
@@ -181,7 +202,93 @@ resource "helm_release" "aws_load_balancer_controller" {
   version    = "1.6.2"
   namespace  = "kube-system"
 
-  values = [file("${path.module}/alb-controller-values.yaml")]
+  # Configuración básica
+  set {
+    name  = "clusterName"
+    value = aws_eks_cluster.main.name
+  }
+
+  set {
+    name  = "region"
+    value = var.region
+  }
+
+  set {
+    name  = "vpcId"
+    value = var.vpc_id
+  }
+
+  # Service Account (ya creado por separado)
+  set {
+    name  = "serviceAccount.create"
+    value = "false"
+  }
+
+  set {
+    name  = "serviceAccount.name"
+    value = kubernetes_service_account.aws_load_balancer_controller.metadata[0].name
+  }
+
+  # Réplicas según ambiente
+  set {
+    name  = "replicaCount"
+    value = var.environment == "prod" ? "2" : "1"
+  }
+
+  # Recursos
+  set {
+    name  = "resources.requests.cpu"
+    value = "100m"
+  }
+
+  set {
+    name  = "resources.requests.memory"
+    value = "200Mi"
+  }
+
+  set {
+    name  = "resources.limits.cpu"
+    value = var.environment == "prod" ? "300m" : "200m"
+  }
+
+  set {
+    name  = "resources.limits.memory"
+    value = "500Mi"
+  }
+
+  # Log level según ambiente
+  set {
+    name  = "logLevel"
+    value = var.environment == "prod" ? "info" : "debug"
+  }
+
+  # Webhooks - CRÍTICO para evitar el problema que tuviste
+  set {
+    name  = "enableServiceMutatorWebhook"
+    value = "true"
+  }
+
+  set {
+    name  = "enableShield"
+    value = "false"
+  }
+
+  set {
+    name  = "enableWaf"
+    value = "false"
+  }
+
+  set {
+    name  = "enableWafv2"
+    value = "false"
+  }
+
+  depends_on = [
+    aws_eks_cluster.main,
+    aws_eks_node_group.main,
+    kubernetes_service_account.aws_load_balancer_controller,
+    aws_iam_role_policy_attachment.alb_controller_policy_attachment
+  ]
 }
 
 
