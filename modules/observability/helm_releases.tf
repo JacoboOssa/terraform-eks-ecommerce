@@ -197,85 +197,74 @@ resource "helm_release" "aws_load_balancer_controller" {
   version    = "1.6.2"
   namespace  = "kube-system"
 
-  set {
-    name  = "clusterName"
-    value = var.cluster_name
-  }
-
-  set {
-    name  = "region"
-    value = var.region
-  }
-
-  set {
-    name  = "vpcId"
-    value = var.vpc_id
-  }
-
-  set {
-    name  = "serviceAccount.create"
-    value = "false"
-  }
-
-  set {
-    name  = "serviceAccount.name"
-    value = kubernetes_service_account.aws_load_balancer_controller.metadata[0].name
-  }
-
-  set {
-    name  = "replicaCount"
-    value = var.environment == "prod" ? "2" : "1"
-  }
-
-  set {
-    name  = "resources.requests.cpu"
-    value = "100m"
-  }
-
-  set {
-    name  = "resources.requests.memory"
-    value = "200Mi"
-  }
-
-  set {
-    name  = "resources.limits.cpu"
-    value = var.environment == "prod" ? "300m" : "200m"
-  }
-
-  set {
-    name  = "resources.limits.memory"
-    value = "500Mi"
-  }
-
-  set {
-    name  = "logLevel"
-    value = var.environment == "prod" ? "info" : "debug"
-  }
-
-  set {
-    name  = "enableServiceMutatorWebhook"
-    value = "true"
-  }
-
-  set {
-    name  = "enableShield"
-    value = "false"
-  }
-
-  set {
-    name  = "enableWaf"
-    value = "false"
-  }
-
-  set {
-    name  = "enableWafv2"
-    value = "false"
-  }
+  set = [
+    {
+      name  = "clusterName"
+      value = var.cluster_name
+    },
+    {
+      name  = "region"
+      value = var.region
+    },
+    {
+      name  = "vpcId"
+      value = var.vpc_id
+    },
+    {
+      name  = "serviceAccount.create"
+      value = "false"
+    },
+    {
+      name  = "serviceAccount.name"
+      value = kubernetes_service_account.aws_load_balancer_controller.metadata[0].name
+    },
+    {
+      name  = "replicaCount"
+      value = var.environment == "prod" ? "2" : "1"
+    },
+    {
+      name  = "resources.requests.cpu"
+      value = "100m"
+    },
+    {
+      name  = "resources.requests.memory"
+      value = "200Mi"
+    },
+    {
+      name  = "resources.limits.cpu"
+      value = var.environment == "prod" ? "300m" : "200m"
+    },
+    {
+      name  = "resources.limits.memory"
+      value = "500Mi"
+    },
+    {
+      name  = "logLevel"
+      value = var.environment == "prod" ? "info" : "debug"
+    },
+    {
+      name  = "enableServiceMutatorWebhook"
+      value = "true"
+    },
+    {
+      name  = "enableShield"
+      value = "false"
+    },
+    {
+      name  = "enableWaf"
+      value = "false"
+    },
+    {
+      name  = "enableWafv2"
+      value = "false"
+    }
+  ]
 
   depends_on = [
     kubernetes_service_account.aws_load_balancer_controller
   ]
 }
+
 
 
 
