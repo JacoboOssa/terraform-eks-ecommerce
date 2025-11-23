@@ -113,12 +113,12 @@ resource "aws_iam_role" "alb_controller" {
     Statement = [{
       Effect = "Allow"
       Principal = {
-        Federated = module.compute.oidc_provider_arn
+        Federated = aws_iam_openid_connect_provider.cluster.arn
       }
       Action = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
-          "${module.compute.oidc_provider_arn}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+          "${replace(aws_iam_openid_connect_provider.cluster.url, "https://", "")}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
         }
       }
     }]
@@ -126,6 +126,7 @@ resource "aws_iam_role" "alb_controller" {
 
   tags = var.tags
 }
+
 
 # Crear IAM Policy desde JSON oficial
 resource "aws_iam_policy" "alb_controller_policy" {
