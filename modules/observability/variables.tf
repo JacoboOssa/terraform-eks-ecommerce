@@ -81,3 +81,9 @@ variable "alb_controller_role_arn" {
   type        = string
 }
 
+variable "vpc_id" {
+  description = "ID de la VPC donde está desplegado el cluster EKS"
+  type        = string
+}
+
+
