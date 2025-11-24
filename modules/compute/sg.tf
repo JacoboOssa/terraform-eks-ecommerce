@@ -125,3 +125,72 @@ resource "aws_security_group_rule" "node_ingress_zipkin" {
   security_group_id = aws_security_group.node_group.id
   cidr_blocks       = ["0.0.0.0/0"]
 }
+
+# Security Group para ALBs
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-${var.environment}-alb-sg"
+  description = "Security group for Application Load Balancers"
+  vpc_id      = var.vpc_id
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.project_name}-${var.environment}-alb-sg"
+    }
+  )
+}
+
+# Permitir tráfico HTTP desde Internet al ALB
+resource "aws_security_group_rule" "alb_ingress_http" {
+  description       = "Allow HTTP traffic from internet"
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  security_group_id = aws_security_group.alb.id
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+# Permitir tráfico HTTPS desde Internet al ALB
+resource "aws_security_group_rule" "alb_ingress_https" {
+  description       = "Allow HTTPS traffic from internet"
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  security_group_id = aws_security_group.alb.id
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+# Permitir todo el tráfico saliente del ALB
+resource "aws_security_group_rule" "alb_egress_all" {
+  description       = "Allow all outbound traffic from ALB"
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  security_group_id = aws_security_group.alb.id
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+# Permitir que los nodos reciban tráfico del ALB en puerto 8081 (Nexus)
+resource "aws_security_group_rule" "node_ingress_from_alb_nexus" {
+  description              = "Allow traffic from ALB to Nexus"
+  type                     = "ingress"
+  from_port                = 8081
+  to_port                  = 8081
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.node_group.id
+  source_security_group_id = aws_security_group.alb.id
+}
+
+# Permitir que los nodos reciban tráfico del ALB en puertos de aplicación
+resource "aws_security_group_rule" "node_ingress_from_alb_apps" {
+  description              = "Allow traffic from ALB to application pods"
+  type                     = "ingress"
+  from_port                = 8000
+  to_port                  = 9500
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.node_group.id
+  source_security_group_id = aws_security_group.alb.id
+}

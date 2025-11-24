@@ -72,35 +72,35 @@ output "eks_oidc_provider_arn" {
 }
 
 # Observability Outputs - TEMPORARILY DISABLED
-# output "monitoring_namespace" {
-#   description = "Kubernetes namespace for monitoring"
-#   value       = module.observability.monitoring_namespace
-# }
-#
-# output "logging_namespace" {
-#   description = "Kubernetes namespace for logging"
-#   value       = module.observability.logging_namespace
-# }
-#
-# output "grafana_service" {
-#   description = "Grafana service name"
-#   value       = module.observability.grafana_service
-# }
-#
-# output "prometheus_service" {
-#   description = "Prometheus service name"
-#   value       = module.observability.prometheus_service
-# }
-#
-# output "kibana_service" {
-#   description = "Kibana service name"
-#   value       = module.observability.kibana_service
-# }
-#
-# output "elasticsearch_service" {
-#   description = "Elasticsearch service name"
-#   value       = module.observability.elasticsearch_service
-# }
+output "monitoring_namespace" {
+  description = "Kubernetes namespace for monitoring"
+  value       = module.observability.monitoring_namespace
+}
+
+output "logging_namespace" {
+  description = "Kubernetes namespace for logging"
+  value       = module.observability.logging_namespace
+}
+
+output "grafana_service" {
+  description = "Grafana service name"
+  value       = module.observability.grafana_service
+}
+
+output "prometheus_service" {
+  description = "Prometheus service name"
+  value       = module.observability.prometheus_service
+}
+
+output "kibana_service" {
+  description = "Kibana service name"
+  value       = module.observability.kibana_service
+}
+
+output "elasticsearch_service" {
+  description = "Elasticsearch service name"
+  value       = module.observability.elasticsearch_service
+}
 
 # Connection Commands
 output "configure_kubectl" {
@@ -108,17 +108,24 @@ output "configure_kubectl" {
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.compute.cluster_name}"
 }
 
-# output "grafana_port_forward" {
-#   description = "Command to port-forward to Grafana"
-#   value       = "kubectl port-forward -n ${module.observability.monitoring_namespace} svc/${module.observability.grafana_service} 3000:80"
-# }
-#
-# output "kibana_port_forward" {
-#   description = "Command to port-forward to Kibana"
-#   value       = "kubectl port-forward -n ${module.observability.logging_namespace} svc/${module.observability.kibana_service} 5601:5601"
-# }
-#
-# output "prometheus_port_forward" {
-#   description = "Command to port-forward to Prometheus"
-#   value       = "kubectl port-forward -n ${module.observability.monitoring_namespace} svc/${module.observability.prometheus_service} 9090:9090"
-# }
+output "grafana_port_forward" {
+  description = "Command to port-forward to Grafana"
+  value       = "kubectl port-forward -n ${module.observability.monitoring_namespace} svc/${module.observability.grafana_service} 3000:80"
+}
+
+output "kibana_port_forward" {
+  description = "Command to port-forward to Kibana"
+  value       = "kubectl port-forward -n ${module.observability.logging_namespace} svc/${module.observability.kibana_service} 5601:5601"
+}
+
+output "prometheus_port_forward" {
+  description = "Command to port-forward to Prometheus"
+  value       = "kubectl port-forward -n ${module.observability.monitoring_namespace} svc/${module.observability.prometheus_service} 9090:9090"
+}
+
+output "alb_security_group_id" {
+  description = "ALB security group ID"
+  value       = module.compute.alb_security_group_id
+}
+
+
