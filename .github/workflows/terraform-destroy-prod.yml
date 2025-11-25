@@ -58,6 +58,38 @@ jobs:
         continue-on-error: true
         run: kubectl get ns
 
+      - name: Delete Kubernetes Ingresses
+        continue-on-error: true
+        run: |
+          kubectl delete ingress microservices-ingress -n microservices || true
+          kubectl delete ingress sonatype-ingress -n artifact || true
+
+      ############################################################
+      # NEW: Esperar a que los ALBs y SGs sean eliminados
+      ############################################################
+      - name: Wait for ALB and SG cleanup
+        continue-on-error: true
+        run: |
+          for i in {1..30}; do
+            ALBS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(DNSName, `k8s-`)].LoadBalancerArn' --output text)
+            if [ -z "$ALBS" ]; then
+              echo "No ALBs k8s-* encontrados."
+              break
+            fi
+            echo "Esperando que se eliminen los ALBs: $ALBS"
+            sleep 20
+          done
+
+          for i in {1..30}; do
+            SGS=$(aws ec2 describe-security-groups --query 'SecurityGroups[?starts_with(GroupName, `k8s-`) || starts_with(GroupName, `ecommerce-prod-alb-sg`) || starts_with(GroupName, `eks-cluster-sg-ecommerce-prod`)].GroupId' --output text)
+            if [ -z "$SGS" ]; then
+              echo "No SGs k8s-* ni ecommerce-prod-alb-sg ni eks-cluster-sg-ecommerce-prod encontrados."
+              break
+            fi
+            echo "Esperando que se eliminen los SGs: $SGS"
+            sleep 20
+          done
+
       ############################################################
       # FIX 2 → Borrar PODs, PVCs y eliminar namespaces problemáticos
       ############################################################
@@ -104,7 +136,6 @@ jobs:
 
       ############################################################
       # FIX 4 → ELIMINAR TODAS LAS ENIs CREADAS POR EKS
-      # Esto es lo que estaba faltando y lo que bloquea tu destroy
       ############################################################
       - name: Force delete leftover ENIs
         continue-on-error: true

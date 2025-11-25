@@ -10,6 +10,11 @@ resource "aws_security_group" "cluster" {
       Name = "${var.project_name}-${var.environment}-eks-cluster-sg"
     }
   )
+  
+    depends_on = [
+      aws_eks_cluster.main,
+      aws_eks_node_group.main
+    ]
 }
 
 # Allow cluster to communicate with worker nodes
@@ -58,6 +63,11 @@ resource "aws_security_group" "node_group" {
       "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "owned"
     }
   )
+  
+    depends_on = [
+      aws_eks_cluster.main,
+      aws_eks_node_group.main
+    ]
 }
 
 # Allow nodes to communicate with each other
@@ -138,6 +148,10 @@ resource "aws_security_group" "alb" {
       Name = "${var.project_name}-${var.environment}-alb-sg"
     }
   )
+  
+    depends_on = [
+      aws_lb.main
+    ]
 }
 
 # Permitir tráfico HTTP desde Internet al ALB
