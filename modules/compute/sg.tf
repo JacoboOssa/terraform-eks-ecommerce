@@ -11,10 +11,6 @@ resource "aws_security_group" "cluster" {
     }
   )
   
-    depends_on = [
-      aws_eks_cluster.main,
-      aws_eks_node_group.main
-    ]
 }
 
 # Allow cluster to communicate with worker nodes
@@ -64,10 +60,6 @@ resource "aws_security_group" "node_group" {
     }
   )
   
-    depends_on = [
-      aws_eks_cluster.main,
-      aws_eks_node_group.main
-    ]
 }
 
 # Allow nodes to communicate with each other
