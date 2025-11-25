@@ -141,9 +141,6 @@ resource "aws_security_group" "alb" {
     }
   )
   
-    depends_on = [
-      aws_lb.main
-    ]
 }
 
 # Permitir tráfico HTTP desde Internet al ALB
